@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ContentView: View {
     let bluetooth: BluetoothManager
+    let strongbox: StrongboxManager
 
     var body: some View {
         NavigationStack {
@@ -44,6 +45,36 @@ struct ContentView: View {
                                 if let value = characteristic.valueDescription { Text("Read value: \(value)").font(.caption).textSelection(.enabled) }
                             } label: { Text(characteristic.characteristicUUID.uuidString).font(.system(.body, design: .monospaced)) }
                         }
+                    }
+                }
+
+                Section("Omi audio") {
+                    LabeledContent("Notifications", value: bluetooth.audioNotificationsActive ? "Active" : "Inactive")
+                    LabeledContent("Packets received", value: "\(bluetooth.audioPacketsReceived)")
+                    LabeledContent("Bytes received", value: "\(bluetooth.audioBytesReceived)")
+                    Text("Only the verified DevKit 2 audio characteristic is subscribed. Its raw BLE payload is forwarded unchanged.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+
+                Section("Strongbox") {
+                    TextField("WebSocket URL", text: Bindable(strongbox).serverURL)
+                        .textInputAutocapitalization(.never).autocorrectionDisabled()
+                        .font(.caption)
+                    HStack {
+                        Circle().fill(strongbox.status == .connected ? .green : .orange).frame(width: 10, height: 10)
+                        Text(strongbox.status.description).font(.headline)
+                        Spacer()
+                        Button(strongbox.status == .connected ? "Disconnect" : "Connect") {
+                            strongbox.status == .connected ? strongbox.disconnect() : strongbox.connect()
+                        }
+                    }
+                    Text(strongbox.diagnosticMessage).font(.caption).foregroundStyle(.secondary)
+                    LabeledContent("Packets forwarded", value: "\(strongbox.packetsForwarded)")
+                    LabeledContent("Bytes forwarded", value: "\(strongbox.bytesForwarded)")
+                    LabeledContent("Buffered packets", value: "\(strongbox.bufferedPacketCount)")
+                    LabeledContent("Dropped (buffer full)", value: "\(strongbox.droppedPacketCount)")
+                    if let lastSuccessfulSend = strongbox.lastSuccessfulSend {
+                        LabeledContent("Last successful send", value: lastSuccessfulSend.formatted(date: .omitted, time: .standard))
                     }
                 }
             }

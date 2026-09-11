@@ -6,12 +6,20 @@ import Observation
 final class BluetoothManager: NSObject {
     private var central: CBCentralManager!
     private var devicesByID: [UUID: DiscoveredDevice] = [:]
+    private var audioPacketHandler: ((AudioPacket) -> Void)?
 
     private(set) var status: BluetoothStatus = .starting
     private(set) var devices: [DiscoveredDevice] = []
     private(set) var connectedDevice: DiscoveredDevice?
     private(set) var gattCharacteristics: [GATTCharacteristic] = []
     private(set) var diagnosticMessage = "Waiting for Bluetooth state."
+    private(set) var audioNotificationsActive = false
+    private(set) var audioPacketsReceived = 0
+    private(set) var audioBytesReceived = 0
+
+    func setAudioPacketHandler(_ handler: @escaping (AudioPacket) -> Void) {
+        audioPacketHandler = handler
+    }
 
     override init() {
         super.init()
@@ -26,6 +34,9 @@ final class BluetoothManager: NSObject {
         devicesByID.removeAll()
         devices.removeAll()
         gattCharacteristics.removeAll()
+        audioNotificationsActive = false
+        audioPacketsReceived = 0
+        audioBytesReceived = 0
         central.scanForPeripherals(withServices: nil, options: [CBCentralManagerScanOptionAllowDuplicatesKey: true])
         status = .scanning
         diagnosticMessage = "Scanning all nearby BLE peripherals."
@@ -39,6 +50,7 @@ final class BluetoothManager: NSObject {
     func connect(to device: DiscoveredDevice) {
         stopScan()
         gattCharacteristics.removeAll()
+        audioNotificationsActive = false
         diagnosticMessage = "Connecting to \(device.displayName)."
         central.connect(device.peripheral)
     }
@@ -98,6 +110,7 @@ extension BluetoothManager: CBCentralManagerDelegate {
 
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
         connectedDevice = nil
+        audioNotificationsActive = false
         diagnosticMessage = "Disconnected from \(peripheral.name ?? peripheral.identifier.uuidString).\(error.map { " \($0.localizedDescription)" } ?? "")"
     }
 }
@@ -117,6 +130,12 @@ extension BluetoothManager: CBPeripheralDelegate {
             gattCharacteristics.append(GATTCharacteristic(serviceUUID: service.uuid, characteristicUUID: characteristic.uuid, properties: characteristic.properties, descriptors: [], valueDescription: nil))
             peripheral.discoverDescriptors(for: characteristic)
             if characteristic.properties.contains(.read) { peripheral.readValue(for: characteristic) }
+            if OmiDevKit2Protocol.isAudioService(service.uuid),
+               OmiDevKit2Protocol.isAudioData(characteristic.uuid),
+               characteristic.properties.contains(.notify) {
+                peripheral.setNotifyValue(true, for: characteristic)
+                diagnosticMessage = "Verified DevKit 2 audio characteristic found; enabling notifications."
+            }
         }
         diagnosticMessage = "GATT discovery complete: \(gattCharacteristics.count) characteristic(s). Readable values are being requested."
     }
@@ -128,11 +147,34 @@ extension BluetoothManager: CBPeripheralDelegate {
 
     func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: Error?) {
         guard let service = characteristic.service else { return }
+        if OmiDevKit2Protocol.isAudioService(service.uuid),
+           OmiDevKit2Protocol.isAudioData(characteristic.uuid),
+           error == nil,
+           let data = characteristic.value,
+           !data.isEmpty {
+            audioPacketsReceived += 1
+            audioBytesReceived += data.count
+            audioPacketHandler?(AudioPacket(deviceID: peripheral.identifier, payload: data, receivedAt: Date()))
+            return
+        }
         let value: String
         if let error { value = "Read error: \(error.localizedDescription)" }
         else if let data = characteristic.value { value = data.map { String(format: "%02X", $0) }.joined(separator: " ") }
         else { value = "No value returned" }
         updateCharacteristic(serviceUUID: service.uuid, characteristic: characteristic, valueDescription: value)
+    }
+
+    func peripheral(_ peripheral: CBPeripheral, didUpdateNotificationStateFor characteristic: CBCharacteristic, error: Error?) {
+        guard let service = characteristic.service,
+              OmiDevKit2Protocol.isAudioService(service.uuid),
+              OmiDevKit2Protocol.isAudioData(characteristic.uuid) else { return }
+        if let error {
+            audioNotificationsActive = false
+            diagnosticMessage = "Could not enable DevKit 2 audio notifications: \(error.localizedDescription)"
+        } else {
+            audioNotificationsActive = characteristic.isNotifying
+            diagnosticMessage = characteristic.isNotifying ? "Receiving verified DevKit 2 audio notifications." : "DevKit 2 audio notifications stopped."
+        }
     }
 
     private func updateCharacteristic(serviceUUID: CBUUID, characteristic: CBCharacteristic, valueDescription: String? = nil) {

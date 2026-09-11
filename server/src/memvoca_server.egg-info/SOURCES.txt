@@ -1,0 +1,10 @@
+pyproject.toml
+src/memvoca_server/__init__.py
+src/memvoca_server/receiver.py
+src/memvoca_server.egg-info/PKG-INFO
+src/memvoca_server.egg-info/SOURCES.txt
+src/memvoca_server.egg-info/dependency_links.txt
+src/memvoca_server.egg-info/entry_points.txt
+src/memvoca_server.egg-info/requires.txt
+src/memvoca_server.egg-info/top_level.txt
+tests/test_receiver.py

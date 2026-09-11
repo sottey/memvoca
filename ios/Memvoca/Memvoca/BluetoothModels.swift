@@ -30,6 +30,30 @@ struct GATTCharacteristic: Identifiable {
     }
 }
 
+struct AudioPacket {
+    let deviceID: UUID
+    let payload: Data
+    let receivedAt: Date
+}
+
+enum OmiDevKit2Protocol {
+    static let audioServiceUUID = "19B10000-E8F2-537E-4F6C-D104768A1214"
+    static let audioDataUUID = "19B10001-E8F2-537E-4F6C-D104768A1214"
+    static let audioCodecUUID = "19B10002-E8F2-537E-4F6C-D104768A1214"
+    static let codec = "opus"
+    static let sampleRate = 16_000
+    static let channels = 1
+    static let payloadLayout = "omi-devkit2: little-endian uint16 packet id, uint8 fragment index, encoded opus fragment"
+
+    static func isAudioService(_ uuid: CBUUID) -> Bool {
+        uuid.uuidString.caseInsensitiveCompare(audioServiceUUID) == .orderedSame
+    }
+
+    static func isAudioData(_ uuid: CBUUID) -> Bool {
+        uuid.uuidString.caseInsensitiveCompare(audioDataUUID) == .orderedSame
+    }
+}
+
 enum BluetoothStatus: Equatable {
     case starting
     case unavailable(String)

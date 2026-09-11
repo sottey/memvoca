@@ -1,0 +1,2 @@
+[console_scripts]
+memvoca-receiver = memvoca_server.receiver:main
